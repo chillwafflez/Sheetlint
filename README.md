@@ -4,8 +4,8 @@ Pre-handoff data quality inspector for messy, human-entered Excel files.
 Catches structural, statistical, semantic, and time-series anomalies before
 files reach an ingestion pipeline or a downstream consumer.
 
-A FastAPI backend wraps a framework-free detector library. Submit an `.xlsx`
-to `POST /api/v1/analysis`, then poll the returned job URL for the report.
+**Backend:** FastAPI wrapping a framework-free detector library.
+**Frontend:** Next.js 16 (App Router) + shadcn/ui + TanStack Query + Plotly.
 
 ## Who it's for
 
@@ -26,24 +26,33 @@ to `POST /api/v1/analysis`, then poll the returned job URL for the report.
 
 ## Setup
 
-Requires **Python 3.11+** and [`uv`](https://docs.astral.sh/uv/) for dependency management.
+Requires **Python 3.11+** with [`uv`](https://docs.astral.sh/uv/) and
+**Node.js 20+** with npm.
+
+### Backend
 
 ```bash
-# 1. Install uv if you don't have it
-pip install uv
-
-# 2. Sync dependencies (creates .venv, installs everything from uv.lock)
-uv sync
-
-# 3. Configure environment (optional — sensible defaults are baked in)
-cp .env.example .env
-# edit .env to set ANTHROPIC_API_KEY if you want AI semantic checks
-
-# 4. Run the API
+pip install uv                            # if you don't have it
+uv sync                                   # creates .venv, installs from uv.lock
+cp .env.example .env                      # (optional) set ANTHROPIC_API_KEY
 uv run uvicorn sheetlint.main:app --reload
 ```
 
-The API is at <http://localhost:8000>; OpenAPI docs at <http://localhost:8000/docs>.
+API at <http://localhost:8000>; OpenAPI docs at <http://localhost:8000/docs>.
+
+### Frontend
+
+In a second terminal:
+
+```bash
+cd frontend
+npm install
+cp .env.local.example .env.local         # (optional) override NEXT_PUBLIC_API_URL
+npm run dev
+```
+
+App at <http://localhost:3000>. The default CORS config on the backend
+already permits `http://localhost:3000`.
 
 ## API
 
@@ -77,12 +86,12 @@ findings, anomalies, trust score, grade, and per-detector breakdown.
 
 ```
 sheetlint/
-├── pyproject.toml              # uv-managed project + ruff/pytest config
+├── pyproject.toml              # backend (uv-managed) + ruff/pytest config
 ├── uv.lock
 ├── .env.example
 ├── samples/
 │   └── generate_sample.py      # builds a deliberately broken demo workbook
-├── src/sheetlint/
+├── src/sheetlint/              # ─── BACKEND ───
 │   ├── main.py                 # FastAPI app, lifespan, CORS, exception handlers
 │   ├── config.py               # pydantic-settings
 │   ├── analysis/               # analysis bounded context
@@ -95,20 +104,39 @@ sheetlint/
 │   │   ├── dependencies.py     # upload validation
 │   │   └── detectors/          # framework-free detector stack
 │   │       ├── base.py         # Detector Protocol
-│   │       ├── structural.py
-│   │       ├── statistical.py
-│   │       ├── duplicates.py
+│   │       ├── structural.py, statistical.py, duplicates.py
 │   │       ├── timeseries.py   # STUMPY + rolling z-score
 │   │       └── ai.py           # Claude semantic checks
 │   └── jobs/                   # async job tracking bounded context
 │       ├── router.py           # GET /api/v1/jobs/{id}
-│       ├── schemas.py
-│       ├── service.py          # in-memory JobStore (Tier 1 — Redis later)
-│       ├── exceptions.py
-│       └── dependencies.py
-└── tests/
-    ├── conftest.py             # httpx.AsyncClient + ASGITransport
-    └── test_analysis_flow.py
+│       ├── schemas.py, service.py, exceptions.py, dependencies.py
+├── tests/
+│   ├── conftest.py             # httpx.AsyncClient + ASGITransport
+│   └── test_analysis_flow.py
+└── frontend/                   # ─── FRONTEND ───
+    ├── package.json, next.config.ts, tsconfig.json, components.json
+    ├── .env.local.example
+    ├── app/
+    │   ├── layout.tsx, providers.tsx, globals.css
+    │   ├── page.tsx            # upload zone
+    │   └── analysis/[jobId]/
+    │       ├── layout.tsx      # polls job, renders nav + status banner
+    │       ├── page.tsx        # Overview (trust score + KPIs + critical findings + AI)
+    │       ├── issues/page.tsx # filterable table + CSV export
+    │       └── time-series/page.tsx  # Plotly per anomaly
+    ├── components/
+    │   ├── ui/                 # shadcn components
+    │   ├── upload-zone.tsx, trust-score-card.tsx, severity-kpis.tsx
+    │   ├── finding-card.tsx, severity-badge.tsx, job-status-banner.tsx
+    │   ├── analysis-nav.tsx, time-series-chart.tsx  # plotly, dynamic-imported
+    ├── lib/
+    │   ├── schemas.ts          # Zod mirroring backend Pydantic models
+    │   ├── api.ts              # fetch client with Zod validation
+    │   ├── env.ts              # validated NEXT_PUBLIC_* env
+    │   └── utils.ts            # cn()
+    └── hooks/
+        ├── use-submit-analysis.ts  # TanStack useMutation → router.push
+        └── use-job.ts              # TanStack useQuery with polling
 ```
 
 ## Adding a new detector
@@ -132,9 +160,15 @@ picks it up automatically.
 ## Development
 
 ```bash
-uv run pytest              # run the test suite
-uv run ruff check src tests
-uv run ruff format src tests
+# Backend
+uv run pytest                       # run the test suite
+uv run ruff check src tests         # lint
+uv run ruff format src tests        # format
+
+# Frontend (from frontend/)
+npm run lint
+npm run build                       # production build — type-checks everything
+npm run dev                         # dev server with hot reload
 ```
 
 ## Notes

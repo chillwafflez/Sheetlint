@@ -204,7 +204,53 @@ This is the single number the domain worker reads. The breakdown is what the eng
 
 > **Update this section at the end of every working session.** Keep the prior entry as a short historical note above the latest one.
 
-### 2026-04-21 (later) — Tier 1 FastAPI complete, Streamlit removed
+### 2026-04-21 (latest) — Tier 2 Next.js frontend complete
+
+**Done:**
+- Scaffolded Next.js 16.2 in `frontend/` with App Router, TypeScript strict, Tailwind v4, Turbopack, `@/*` import alias, no src-dir. React 19.2.
+- Installed shadcn/ui (base-nova preset, neutral palette, lucide icons): button, card, badge, table, tabs, progress, input, dialog, sonner, skeleton, select, separator, tooltip.
+- Extra runtime deps: `@tanstack/react-query` v5, `zod` v4, `react-plotly.js` + `plotly.js`, `lucide-react`. Types: `@types/react-plotly.js`, `@types/plotly.js`.
+- **API contract at the network boundary:** `frontend/lib/schemas.ts` mirrors the backend Pydantic models 1:1 (`Severity`, `Finding`, `AnomalyResult`, `TrustScore`, `AnalysisResult`, `Job`, `JobStatus`, `JobCreated`, plus a narrowed `TimeSeriesMetadata`). Every `fetch().json()` in `lib/api.ts` is piped through `.parse()` before typed values leave the module.
+- **Env validation:** `lib/env.ts` runs Zod against `NEXT_PUBLIC_*` at import time — missing/misshapen values fail the build, not first request.
+- **Hooks:** `use-submit-analysis` (TanStack `useMutation` → `router.push(/analysis/{id})` on 202), `use-job` (TanStack `useQuery` with `refetchInterval` that halts once status is terminal; disables retry on 404).
+- **Pages:**
+  - `/` — upload zone (drag-drop + click), feature teaser.
+  - `/analysis/[jobId]` — shared `layout.tsx` polls job + renders header with filename/grade + status banner + nav tabs (only when succeeded). Children read from the same TanStack cache key so they share the one poll loop.
+  - `/analysis/[jobId]/page.tsx` — Overview: `TrustScoreCard` hero + `SeverityKpis` + per-detector breakdown (HTML bars, no chart lib) + top 5 critical findings + collapsible AI insights.
+  - `/analysis/[jobId]/issues/page.tsx` — filterable shadcn Table: text search + severity/detector/sheet dropdowns. Client-side CSV export via Blob.
+  - `/analysis/[jobId]/time-series/page.tsx` — Plotly chart per anomaly (dynamic-imported with `ssr: false`). `timeSeriesMetadataSchema.safeParse(metadata)` narrows the generic `dict[str, Any]` the backend ships through `AnomalyResult.metadata`.
+- **Shared components:** `UploadZone`, `TrustScoreCard`, `SeverityKpis`, `FindingCard`, `SeverityBadge`, `JobStatusBanner`, `AnalysisNav` — all tuned to the #2563EB blue-slate palette that carried over from the Streamlit design.
+- Updated root `layout.tsx` to mount a `Providers` client component wrapping `QueryClientProvider` + `TooltipProvider` + `Toaster`.
+- `npm run build` clean (all 4 routes compile, types pass, eslint clean). Static `/`, dynamic `/analysis/...`.
+
+**How to run (both services):**
+```bash
+# Terminal 1 — backend
+uv sync && uv run uvicorn sheetlint.main:app --reload
+
+# Terminal 2 — frontend
+cd frontend && npm install && npm run dev
+```
+Open http://localhost:3000, upload a workbook generated via `python samples/generate_sample.py`, watch the polling → report flow.
+
+**Next session — pick whichever:**
+1. **Tier 3 infra** — Dockerfiles (FastAPI + Next.js), GitHub Actions CI, Sentry on both sides.
+2. **Persistence** — Postgres for run history + share links. Pair with auth (Clerk/Auth0) so "my previous analyses" is a real view.
+3. **Redis-backed JobStore** — needed before any multi-worker deploy. Interface in `jobs/service.py` is shaped to port.
+4. **Celery / Taskiq** — so `BackgroundTasks` doesn't drop jobs when a worker crashes.
+5. **Async AI detector** — `asyncio.gather` the per-column Claude calls.
+6. **Frontend polish** — dark mode toggle (shadcn `next-themes` is already installed), keyboard accessibility audit, Suspense boundaries with granular skeletons.
+7. **Domain rule packs** — e.g. `InsuranceDetector` with state-code validation, premium > 0, policy ID prefix.
+
+**Known Tier 2 limitations:**
+- No frontend tests (explicit scope decision for the demo).
+- Single-select filters on the Issues page — multi-select would need a DropdownMenu + checkboxes (`npx shadcn add dropdown-menu`).
+- No share URLs: the job_id IS the URL, but the job is gone after `JOB_RESULT_TTL_HOURS` (default 24) or a backend restart. Persistence lives in Tier 3.
+- Plotly is heavy (~1MB gzipped). Fine behind a dynamic import for a demo; swap to Recharts or a trimmed Plotly bundle later if bundle size matters.
+
+---
+
+### 2026-04-21 (earlier) — Tier 1 FastAPI complete, Streamlit removed
 
 **Done:**
 - Repo restructured: `src/excel_detector/` → `src/sheetlint/`. Streamlit layer deleted (`app.py`, `pages/`, `src/excel_detector/ui/`, `.streamlit/`, `requirements.txt`).

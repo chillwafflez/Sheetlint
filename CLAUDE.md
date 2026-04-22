@@ -9,13 +9,14 @@ files reach an ingestion pipeline or a downstream consumer. Two personas:
 handoff, and **data engineers / analysts** who receive those files.
 
 The project started as a 1-week Streamlit prototype assigned by the user's
-tech lead. As of 2026-04-21 the Streamlit layer has been removed and the
-codebase now ships as a **FastAPI backend** wrapping the original
-framework-free detector library (Tier 1 of the production migration plan).
-A Next.js frontend will consume the API in Tier 2.
+tech lead. As of 2026-04-21 the Streamlit layer has been removed. The codebase
+now ships as a **FastAPI backend** (Tier 1) wrapping the original
+framework-free detector library, plus a **Next.js 16 frontend** (Tier 2)
+that consumes the API.
 
 ## Stack
 
+### Backend
 - **Python 3.11+** (tested on 3.13 via conda / uv venv)
 - **Package & env manager:** `uv` + `pyproject.toml` + `uv.lock`
 - **Web:** FastAPI ≥0.122, Uvicorn, python-multipart
@@ -24,7 +25,15 @@ A Next.js frontend will consume the API in Tier 2.
 - **Detection:** STUMPY (matrix profile), rapidfuzz
 - **AI:** anthropic SDK, `claude-opus-4-7`, adaptive thinking, prompt caching, structured outputs via `client.messages.parse()`
 - **Testing:** pytest, pytest-asyncio, httpx (+ ASGITransport)
-- **Lint / format:** ruff (replaces black, isort, autoflake)
+- **Lint / format:** ruff
+
+### Frontend
+- **Next.js 16** (App Router, Turbopack, typed routes), **React 19**, **TypeScript strict**
+- **Styling:** Tailwind CSS v4, shadcn/ui (base-nova preset, neutral palette, lucide icons)
+- **Data fetching:** TanStack Query v5 (mutation for upload, query with `refetchInterval` for job polling)
+- **Validation:** Zod v4 — every `fetch().json()` goes through `.parse()` in `lib/api.ts`
+- **Charts:** Plotly.js via react-plotly.js, dynamic-imported with `ssr: false`
+- **Toasts:** sonner
 
 ## Architectural rules
 
@@ -73,16 +82,23 @@ A Next.js frontend will consume the API in Tier 2.
    `dependencies.py`, `exceptions.py`. Cross-domain imports are explicit
    — never wildcard.
 
+9. **Frontend validates at the network boundary.** `frontend/lib/schemas.ts`
+   mirrors the backend Pydantic models as Zod schemas; `lib/api.ts` pipes
+   every response through `.parse()` before typed values leave the module.
+   Keep schemas in lockstep with `src/sheetlint/{analysis,jobs}/schemas.py`.
+
+10. **Frontend pages are Client Components.** The interactivity (upload,
+    polling, filters, Plotly) demands it. Layouts that need route params
+    use `useParams()`, not awaited `params` props. Plotly is always
+    dynamic-imported with `{ ssr: false }` to keep the server bundle lean.
+
 ## File layout
 
 ```
 sheetlint/
-├── pyproject.toml                   # uv project + ruff + pytest config
-├── uv.lock
-├── .env.example
-├── samples/
-│   └── generate_sample.py           # seeds the broken demo workbook
-├── src/sheetlint/
+├── pyproject.toml, uv.lock, .env.example
+├── samples/generate_sample.py
+├── src/sheetlint/                   # ─── BACKEND ───
 │   ├── main.py                      # FastAPI app, lifespan, CORS, handlers
 │   ├── config.py                    # pydantic-settings global Settings
 │   ├── analysis/
@@ -95,30 +111,51 @@ sheetlint/
 │   │   ├── exceptions.py
 │   │   └── detectors/
 │   │       ├── base.py              # Detector Protocol
-│   │       ├── structural.py
-│   │       ├── statistical.py
-│   │       ├── duplicates.py
+│   │       ├── structural.py, statistical.py, duplicates.py
 │   │       ├── timeseries.py        # STUMPY + rolling z-score
 │   │       └── ai.py                # Claude semantic checks (DI'd api_key)
 │   └── jobs/
 │       ├── router.py                # GET /api/v1/jobs/{id}
-│       ├── schemas.py               # Job, JobStatus, JobCreated
-│       ├── service.py               # in-memory JobStore (asyncio.Lock + dict)
-│       ├── dependencies.py          # JobStoreDep, valid_job_id
-│       └── exceptions.py
-└── tests/
-    ├── conftest.py                  # httpx.AsyncClient + ASGITransport
-    └── test_analysis_flow.py
+│       ├── schemas.py, service.py, dependencies.py, exceptions.py
+├── tests/
+│   ├── conftest.py                  # httpx.AsyncClient + ASGITransport
+│   └── test_analysis_flow.py
+└── frontend/                        # ─── FRONTEND ───
+    ├── package.json, next.config.ts, tsconfig.json, components.json
+    ├── .env.local.example
+    ├── app/
+    │   ├── layout.tsx, providers.tsx, globals.css
+    │   ├── page.tsx                 # upload zone + landing hero
+    │   └── analysis/[jobId]/
+    │       ├── layout.tsx           # polls job, shows status + nav
+    │       ├── page.tsx             # Overview
+    │       ├── issues/page.tsx      # filterable table + CSV export
+    │       └── time-series/page.tsx # Plotly per anomaly
+    ├── components/
+    │   ├── ui/                      # shadcn components (auto-generated)
+    │   └── *.tsx                    # upload-zone, trust-score-card, etc.
+    ├── lib/{schemas,api,env,utils}.ts
+    └── hooks/{use-submit-analysis,use-job}.ts
 ```
 
 ## How to run
 
 ```bash
-uv sync                                        # creates .venv, installs all deps
-cp .env.example .env                           # (optional) set ANTHROPIC_API_KEY
-uv run uvicorn sheetlint.main:app --reload     # API at http://localhost:8000
-uv run pytest                                  # run the test suite
-uv run ruff check src tests                    # lint
+# Backend (terminal 1)
+uv sync
+cp .env.example .env
+uv run uvicorn sheetlint.main:app --reload     # http://localhost:8000
+
+# Frontend (terminal 2)
+cd frontend
+npm install
+npm run dev                                    # http://localhost:3000
+
+# Checks
+uv run pytest                                  # backend test suite
+uv run ruff check src tests                    # backend lint
+cd frontend && npm run build                   # frontend type-check + build
+cd frontend && npm run lint                    # frontend lint
 ```
 
 ## Endpoints
@@ -131,6 +168,19 @@ uv run ruff check src tests                    # lint
   (STUMPY, openpyxl).
 - `GET /api/v1/jobs/{id}` — poll for job state; once `status` is `succeeded`,
   `result` holds the full `AnalysisResult`.
+
+## Frontend routes
+
+- `/` — upload zone + landing hero
+- `/analysis/[jobId]` — Overview (trust score, severity KPIs, per-detector
+  breakdown, top critical findings, AI insights if any)
+- `/analysis/[jobId]/issues` — filterable findings table with CSV export
+- `/analysis/[jobId]/time-series` — Plotly charts with z-score + matrix-profile
+  markers
+
+Polling: `hooks/use-job.ts` calls `useQuery` with a `refetchInterval` that
+halts once `status` is `succeeded` or `failed`. TanStack Query dedupes, so
+every page that calls `useJob(id)` shares one cached poll loop.
 
 ## Conventions
 
