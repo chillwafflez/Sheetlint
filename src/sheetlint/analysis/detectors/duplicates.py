@@ -10,8 +10,8 @@ from collections import Counter
 
 from rapidfuzz import fuzz, process
 
-from excel_detector.detectors.base import Finding, Severity
-from excel_detector.parser import ExcelDocument, SheetView
+from sheetlint.analysis.parser import ExcelDocument, SheetView
+from sheetlint.analysis.schemas import Finding, Severity
 
 FUZZY_THRESHOLD = 88  # 0-100; 88 catches 'Californa' -> 'California' without false positives
 FUZZY_MIN_CARDINALITY = 5

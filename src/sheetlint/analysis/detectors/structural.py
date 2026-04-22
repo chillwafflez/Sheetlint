@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from openpyxl.utils import range_boundaries
 
-from excel_detector.detectors.base import Finding, Severity
-from excel_detector.parser import ExcelDocument, SheetView
+from sheetlint.analysis.parser import ExcelDocument, SheetView
+from sheetlint.analysis.schemas import Finding, Severity
 
 
 class StructuralDetector:

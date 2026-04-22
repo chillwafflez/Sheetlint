@@ -11,8 +11,8 @@ import re
 
 import pandas as pd
 
-from excel_detector.detectors.base import Finding, Severity
-from excel_detector.parser import ExcelDocument, SheetView
+from sheetlint.analysis.parser import ExcelDocument, SheetView
+from sheetlint.analysis.schemas import Finding, Severity
 
 # Threshold: if >= TYPE_PURITY threshold of non-null values match a single type,
 # anything else is a suspect outlier. Tuned to catch the "few stringified numbers

@@ -166,9 +166,9 @@ This is the single number the domain worker reads. The breakdown is what the eng
 - Logfire (Pydantic) or OpenTelemetry → Grafana Cloud for traces; particularly useful to see which detector is slow on which file shape.
 
 ### Phased roadmap
-- **Tier 1 (4–6 hours):** Wrap detectors in FastAPI, expose `POST /analyze`. Test via `/docs` Swagger UI. *You now have a real API.*
-- **Tier 2 (3–5 days):** Build Next.js + shadcn/ui frontend. Five pages mirror current Streamlit structure. Deploy Vercel + Render. *You now have a real product.*
-- **Tier 3 (2–4 weeks):** Auth, Postgres, S3, Celery, Sentry, Docker, CI/CD, RBAC for engineer vs domain-worker personas. *You now have a SaaS.*
+- **Tier 1 (DONE 2026-04-21):** FastAPI wrapper around the detector stack. Async-from-day-one: `POST /api/v1/analysis` returns 202 + job_id; `GET /api/v1/jobs/{id}` polls. Pydantic v2 schemas replaced the dataclasses. Streamlit layer removed entirely. *You now have a real API.*
+- **Tier 2 (3–5 days):** Build Next.js + shadcn/ui frontend. Five pages mirror original Streamlit structure. Deploy Vercel + Render. *You now have a real product.*
+- **Tier 3 (2–4 weeks):** Auth, Postgres, S3, Celery / Redis-backed JobStore, Sentry, Docker, CI/CD, RBAC for engineer vs domain-worker personas. *You now have a SaaS.*
 
 ---
 
@@ -203,6 +203,48 @@ This is the single number the domain worker reads. The breakdown is what the eng
 ## 9. Current status / where I left off
 
 > **Update this section at the end of every working session.** Keep the prior entry as a short historical note above the latest one.
+
+### 2026-04-21 (later) — Tier 1 FastAPI complete, Streamlit removed
+
+**Done:**
+- Repo restructured: `src/excel_detector/` → `src/sheetlint/`. Streamlit layer deleted (`app.py`, `pages/`, `src/excel_detector/ui/`, `.streamlit/`, `requirements.txt`).
+- Dependencies migrated to **uv + pyproject.toml** with `uv.lock`. Dead deps pruned (streamlit, plotly, pyod, ydata-profiling, pandera, black, statsmodels, scipy, scikit-learn — none were actually imported anywhere).
+- `Finding`, `AnalysisResult`, `AnomalyResult` converted from `@dataclass` to **Pydantic v2** models in `src/sheetlint/analysis/schemas.py`. `row_count` is now a `@computed_field`; `Severity` is `StrEnum`. `TrustScore` is a proper nested model — the `score_breakdown["_grade"]` / `["_by_severity"]` dict hack is gone.
+- `Detector` Protocol stayed in `detectors/base.py`; everything else moved out of there.
+- AI detector now takes `api_key` via constructor injection. `_get_api_key()` / Streamlit-secrets fallback removed. Settings layer (`sheetlint/config.py`, pydantic-settings) supplies the key at run time.
+- FastAPI app under `src/sheetlint/main.py`: lifespan-managed `JobStore` on `app.state`, periodic TTL cleanup task, CORS middleware, versioned router mount at `/api/v1`, `/health` probe, `/docs` gated on environment.
+- Two bounded contexts per the FastAPI best-practices guide: `analysis/` (router, schemas, service, parser, scoring, detectors, dependencies, exceptions) and `jobs/` (router, schemas, service, dependencies, exceptions).
+- **Async-from-day-one:** `POST /api/v1/analysis` accepts multipart upload, validates extension + size, spools to a temp file, creates a Job, schedules `BackgroundTasks` + `run_in_threadpool`, returns `202` with `Location` header pointing at the polling URL. `GET /api/v1/jobs/{id}` returns the current state with the `AnalysisResult` once `status=succeeded`. Temp files are cleaned in the task's `finally`.
+- Exception handlers translate `InvalidExcelFileError` → 400, `FileTooLargeError` → 413, `JobNotFoundError` → 404.
+- Tests use `httpx.AsyncClient` + `ASGITransport` + manual `app.router.lifespan_context()` (ASGITransport doesn't propagate lifespan). 4 tests pass: health, end-to-end analysis flow, unknown-job 404, invalid-extension 400. Suite runs in ~0.1s.
+- Ruff clean (`E F W I UP B SIM ASYNC`), mypy non-strict.
+- README, CLAUDE.md updated for the new layout and run instructions.
+
+**How to run:**
+```bash
+uv sync
+cp .env.example .env    # optional
+uv run uvicorn sheetlint.main:app --reload   # http://localhost:8000/docs
+uv run pytest                                # suite
+uv run ruff check src tests                  # lint
+```
+
+**Next session — pick whichever:**
+1. **Tier 2 (Next.js + shadcn/ui)** — now that the API is stable, mirror the five old Streamlit pages as React routes. Use TanStack Query against `POST /api/v1/analysis` + polling on `GET /api/v1/jobs/{id}`. TanStack Table for the Issues page, Plotly.js for time-series.
+2. **Async AI detector** — `asyncio.gather` the per-column Claude calls in `detectors/ai.py`. Big latency win for wide sheets.
+3. **Redis-backed JobStore** — swap `jobs/service.py` in place; the interface is already the shape to port. Needed before multi-worker deploy.
+4. **Celery / Taskiq worker** — graduate from `BackgroundTasks` so a worker crash doesn't lose jobs. Pairs with Redis.
+5. **Profiling tab** — re-introduce via a new `/profile/{sheet}` endpoint instead of a Streamlit page.
+6. **Domain rule packs** — insurance-specific (state code valid, premium > 0, valid policy ID prefix) as a new `InsuranceDetector`.
+
+**Known Tier 1 limitations (documented but not blocking):**
+- In-memory `JobStore` dies with the worker; single-process only.
+- `BackgroundTasks` loses jobs if the worker crashes mid-analysis (matches the JobStore — upgrade them together).
+- AI detector is sequential.
+- No persistence of past runs.
+- Only `.xlsx` supported.
+
+---
 
 ### 2026-04-21 — Prototype complete, ready for demo
 

@@ -22,8 +22,8 @@ try:
 except ImportError:
     _HAS_STUMPY = False
 
-from excel_detector.detectors.base import AnomalyResult, Finding, Severity
-from excel_detector.parser import ExcelDocument, SheetView
+from sheetlint.analysis.parser import ExcelDocument, SheetView
+from sheetlint.analysis.schemas import AnomalyResult, Finding, Severity
 
 MIN_LEN_FOR_STUMPY = 50
 ZSCORE_THRESHOLD = 3.0

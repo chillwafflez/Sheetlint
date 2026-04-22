@@ -12,21 +12,19 @@ We use:
     - Pydantic-typed structured outputs via client.messages.parse() so we get
       validated results, not raw JSON we have to clean up ourselves.
 
-If no API key is configured the detector becomes a no-op — the app still runs
-with the other detectors.
+If no API key is supplied at construction the detector becomes a no-op — the
+rest of the stack still runs.
 """
 
 from __future__ import annotations
 
 import logging
-import os
 from typing import Any
 
-import pandas as pd
 from pydantic import BaseModel, Field
 
-from excel_detector.detectors.base import Finding, Severity
-from excel_detector.parser import ExcelDocument, SheetView
+from sheetlint.analysis.parser import ExcelDocument, SheetView
+from sheetlint.analysis.schemas import Finding, Severity
 
 log = logging.getLogger(__name__)
 
@@ -65,36 +63,25 @@ class ColumnAssessment(BaseModel):
     )
 
 
-def _get_api_key() -> str | None:
-    """Prefer Streamlit secrets, fall back to env var."""
-    try:
-        import streamlit as st
-        if "ANTHROPIC_API_KEY" in st.secrets:
-            return st.secrets["ANTHROPIC_API_KEY"]
-    except Exception:
-        pass
-    return os.environ.get("ANTHROPIC_API_KEY")
-
-
 class AIDetector:
     name = "AI"
 
-    def __init__(self, model: str = AI_MODEL):
+    def __init__(self, api_key: str | None = None, model: str = AI_MODEL):
+        self.api_key = api_key
         self.model = model
         self._client: Any = None
 
     def _ensure_client(self) -> Any:
         if self._client is not None:
             return self._client
-        api_key = _get_api_key()
-        if not api_key:
+        if not self.api_key:
             return None
         try:
             import anthropic
         except ImportError:
             log.warning("anthropic SDK not installed — skipping AI detector.")
             return None
-        self._client = anthropic.Anthropic(api_key=api_key)
+        self._client = anthropic.Anthropic(api_key=self.api_key)
         return self._client
 
     def run(self, doc: ExcelDocument) -> list[Finding]:
@@ -116,10 +103,9 @@ class AIDetector:
         for col in columns:
             series = sheet.df[col].dropna()
             if len(series) < 3:
-                continue  # not enough signal
+                continue
 
-            # Take a deterministic sample: first N values. Deterministic matters
-            # because any non-determinism here would invalidate our cache prefix.
+            # Deterministic sample preserves the cache prefix across re-runs.
             sample_indices = series.index[:SAMPLE_SIZE].tolist()
             sample_values = [str(series.iloc[sample_indices.index(i)]) for i in sample_indices]
 
@@ -148,7 +134,6 @@ class AIDetector:
             if assessment is None:
                 continue
 
-            # Only surface findings when there's an actionable problem.
             if not assessment.name_matches_content:
                 out.append(
                     Finding(
@@ -169,7 +154,11 @@ class AIDetector:
                 )
 
             if assessment.has_issues and assessment.suspect_value_indices:
-                df_rows = [sample_indices[i] for i in assessment.suspect_value_indices if i < len(sample_indices)]
+                df_rows = [
+                    sample_indices[i]
+                    for i in assessment.suspect_value_indices
+                    if i < len(sample_indices)
+                ]
                 out.append(
                     Finding(
                         detector=self.name,
@@ -193,8 +182,3 @@ class AIDetector:
             f"Sample values (0-indexed within this sample):\n{numbered}\n\n"
             "Assess this column and return the structured result."
         )
-
-
-def sample_dataframe(df: pd.DataFrame, n: int = SAMPLE_SIZE) -> pd.DataFrame:
-    """Utility for the Streamlit page to preview what's being sent to Claude."""
-    return df.head(n)
