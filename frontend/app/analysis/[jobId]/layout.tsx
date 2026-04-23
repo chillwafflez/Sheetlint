@@ -1,86 +1,80 @@
 "use client";
 
-import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import type { ReactNode } from "react";
 
-import { AnalysisNav } from "@/components/analysis-nav";
-import { JobStatusBanner } from "@/components/job-status-banner";
-import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
+import { ReportHeader } from "@/components/report-header";
+import { ReportTabs } from "@/components/report-tabs";
+import { ScanningView } from "@/components/scanning-view";
 import { useJob } from "@/hooks/use-job";
 import { ApiError } from "@/lib/api";
+import { downloadFindingsCsv } from "@/lib/csv";
 
 export default function AnalysisLayout({ children }: { children: ReactNode }) {
   const { jobId } = useParams<{ jobId: string }>();
   const { data: job, isLoading, error } = useJob(jobId);
 
   if (isLoading) {
-    return (
-      <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
-        <Skeleton className="h-8 w-64" />
-        <Skeleton className="h-24" />
-      </div>
-    );
+    return <ScanningView filename="workbook" done={false} />;
   }
 
   if (error) {
     const notFound = error instanceof ApiError && error.status === 404;
     return (
-      <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col items-center justify-center gap-4 px-6 py-16 text-center">
-        <h2 className="text-xl font-semibold">
-          {notFound ? "Job not found" : "Couldn't load this job"}
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          {notFound
-            ? "The job may have expired or the link is invalid."
-            : error.message}
-        </p>
-        <Link
-          href="/"
-          className="text-sm font-medium text-blue-600 hover:text-blue-700"
-        >
-          Upload a new file
-        </Link>
+      <div className="screen screen--narrow">
+        <div className="empty-state">
+          <h3>{notFound ? "Job not found" : "Couldn't load this job"}</h3>
+          <p>
+            {notFound
+              ? "The job may have expired or the link is invalid."
+              : error.message}
+          </p>
+          <Link href="/" className="btn btn--primary" style={{ marginTop: 16 }}>
+            Upload a new file
+          </Link>
+        </div>
       </div>
     );
   }
 
   if (!job) return null;
 
-  const ready = job.status === "succeeded" && job.result !== null;
+  if (job.status === "failed") {
+    return (
+      <div className="screen screen--narrow">
+        <div className="empty-state">
+          <h3>Inspection failed</h3>
+          <p>{job.error ?? "The detector stack crashed mid-run."}</p>
+          <Link href="/" className="btn btn--primary" style={{ marginTop: 16 }}>
+            Try another file
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (job.status !== "succeeded" || !job.result) {
+    return <ScanningView filename={job.filename} done={false} />;
+  }
+
+  const result = job.result;
+  const scanSeconds =
+    new Date(job.updated_at).getTime() - new Date(job.created_at).getTime();
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-6 py-8">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <Link
-            href="/"
-            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <ArrowLeft className="size-3" />
-            Upload another
-          </Link>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-            {job.filename}
-          </h1>
-        </div>
-        {ready && job.result ? (
-          <Badge variant="secondary" className="text-sm">
-            Grade {job.result.trust_score.grade}
-          </Badge>
-        ) : null}
-      </header>
-
-      <JobStatusBanner job={job} />
-
-      {ready ? (
-        <>
-          <AnalysisNav jobId={jobId} />
-          {children}
-        </>
-      ) : null}
+    <div className="screen">
+      <ReportHeader
+        result={result}
+        scanSeconds={scanSeconds > 0 ? scanSeconds / 1000 : null}
+        onDownload={() => downloadFindingsCsv(result.findings, result.filename)}
+      />
+      <ReportTabs
+        jobId={jobId}
+        issueCount={result.findings.length}
+        anomalyCount={result.anomalies.length}
+      />
+      {children}
     </div>
   );
 }

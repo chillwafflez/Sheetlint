@@ -2,13 +2,8 @@
 
 import { useParams } from "next/navigation";
 
-import { TimeSeriesChart } from "@/components/time-series-chart";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TsCard } from "@/components/ts-card";
 import { useJob } from "@/hooks/use-job";
-import {
-  type AnomalyResult,
-  timeSeriesMetadataSchema,
-} from "@/lib/schemas";
 
 export default function TimeSeriesPage() {
   const { jobId } = useParams<{ jobId: string }>();
@@ -17,43 +12,24 @@ export default function TimeSeriesPage() {
 
   if (anomalies.length === 0) {
     return (
-      <Card>
-        <CardContent className="py-10 text-center text-sm text-muted-foreground">
-          No time-series columns detected in this file. Time-series detection
-          requires a date column paired with a numeric column holding at least
-          20 points.
-        </CardContent>
-      </Card>
+      <div className="empty-state">
+        <h3>No time-series columns detected.</h3>
+        <div>
+          Time-series detection needs a date column paired with a numeric
+          column holding at least 20 points.
+        </div>
+      </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div>
       {anomalies.map((anomaly, i) => (
-        <AnomalyPanel key={`${anomaly.series_name}-${i}`} anomaly={anomaly} />
+        <TsCard
+          key={`${anomaly.series_name}-${i}`}
+          anomaly={anomaly}
+        />
       ))}
     </div>
-  );
-}
-
-function AnomalyPanel({ anomaly }: { anomaly: AnomalyResult }) {
-  const parsed = timeSeriesMetadataSchema.safeParse(anomaly.metadata);
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">{anomaly.series_name}</CardTitle>
-        <p className="text-xs text-muted-foreground">{anomaly.explanation}</p>
-      </CardHeader>
-      <CardContent>
-        {parsed.success ? (
-          <TimeSeriesChart metadata={parsed.data} />
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Chart data unavailable for this series.
-          </p>
-        )}
-      </CardContent>
-    </Card>
   );
 }

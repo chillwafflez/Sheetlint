@@ -1,37 +1,36 @@
 "use client";
 
-import { FileSpreadsheet, Loader2, Upload } from "lucide-react";
 import { useRef, useState, type ChangeEvent, type DragEvent } from "react";
 import { toast } from "sonner";
 
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { DocIcon } from "@/components/icons";
 import { useSubmitAnalysis } from "@/hooks/use-submit-analysis";
-import { cn } from "@/lib/utils";
 
-const ACCEPTED_TYPES = ".xlsx";
-const ACCEPTED_MIME =
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const ACCEPTED_EXTENSIONS = [".xlsx"] as const;
+const MAX_MB = 50;
 
-function isXlsx(file: File): boolean {
-  return (
-    file.name.toLowerCase().endsWith(".xlsx") ||
-    file.type === ACCEPTED_MIME ||
-    file.type === ""
-  );
+function isAccepted(file: File): boolean {
+  const name = file.name.toLowerCase();
+  return ACCEPTED_EXTENSIONS.some((ext) => name.endsWith(ext));
 }
 
 export function UploadZone() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [dragOver, setDragOver] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [stagedName, setStagedName] = useState<string | null>(null);
   const { mutate, isPending } = useSubmitAnalysis();
 
   function submit(file: File | null | undefined) {
     if (!file) return;
-    if (!isXlsx(file)) {
+    if (!isAccepted(file)) {
       toast.error("Only .xlsx files are supported.");
       return;
     }
+    if (file.size > MAX_MB * 1024 * 1024) {
+      toast.error(`File exceeds the ${MAX_MB} MB limit.`);
+      return;
+    }
+    setStagedName(file.name);
     mutate(file);
   }
 
@@ -42,64 +41,60 @@ export function UploadZone() {
 
   function onDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
-    setDragOver(false);
+    setDragging(false);
     submit(event.dataTransfer.files?.[0]);
   }
 
-  function onDragOver(event: DragEvent<HTMLDivElement>) {
-    event.preventDefault();
-    setDragOver(true);
-  }
+  const busy = isPending;
+  const title =
+    busy && stagedName ? (
+      <>
+        Reading <span className="mono">{stagedName}</span>…
+      </>
+    ) : (
+      "Drop an .xlsx file to inspect"
+    );
 
   return (
-    <Card
+    <div
+      className={`drop ${dragging ? "dragging" : ""}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
-      onDragOver={onDragOver}
-      onDragLeave={() => setDragOver(false)}
-      className={cn(
-        "border-2 border-dashed transition-colors",
-        dragOver
-          ? "border-blue-500 bg-blue-50/60 dark:bg-blue-900/20"
-          : "border-border",
-        isPending && "pointer-events-none opacity-70",
-      )}
     >
-      <CardContent className="flex flex-col items-center gap-4 p-10 text-center">
-        <div className="flex size-12 items-center justify-center rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">
-          {isPending ? (
-            <Loader2 className="size-6 animate-spin" />
-          ) : (
-            <FileSpreadsheet className="size-6" />
-          )}
-        </div>
+      <div className="drop__icon" aria-hidden />
+      <div className="drop__title">{title}</div>
+      <div className="drop__sub">
+        Or click to browse. Max {MAX_MB} MB. Files are processed by the
+        Sheetlint API — nothing is persisted beyond the job TTL.
+      </div>
 
-        <div className="space-y-1">
-          <div className="text-base font-medium">
-            {isPending ? "Uploading…" : "Drop an .xlsx file to inspect"}
-          </div>
-          <div className="text-xs text-muted-foreground">
-            Or click to browse. Max 50 MB.
-          </div>
-        </div>
+      <div className="drop__actions">
+        <button
+          type="button"
+          className="btn btn--primary"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          <DocIcon /> Choose file
+        </button>
 
         <input
           ref={inputRef}
           type="file"
-          accept={ACCEPTED_TYPES}
+          accept={ACCEPTED_EXTENSIONS.join(",")}
+          className="sr"
           onChange={onChange}
-          className="hidden"
-          disabled={isPending}
+          disabled={busy}
         />
+      </div>
 
-        <Button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          disabled={isPending}
-        >
-          <Upload className="size-4" />
-          Choose file
-        </Button>
-      </CardContent>
-    </Card>
+      <div className="drop__hint">
+        Supports .xlsx — up to 50 sheets per workbook
+      </div>
+    </div>
   );
 }

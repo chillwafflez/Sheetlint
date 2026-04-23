@@ -204,7 +204,38 @@ This is the single number the domain worker reads. The breakdown is what the eng
 
 > **Update this section at the end of every working session.** Keep the prior entry as a short historical note above the latest one.
 
-### 2026-04-21 (latest) — Tier 2 Next.js frontend complete
+### 2026-04-22 (latest) — Frontend redesign from Claude Design bundle
+
+**Done:**
+- Replaced the shadcn/ui-based frontend with the Claude Design handoff from `sheetlint/project/` (Instrument Serif + Inter + JetBrains Mono, OKLCH "forest" palette, named component classes — `.btn`, `.score-card`, `.callout`, `.issues-table`, `.ts-card`, etc.).
+- Design tokens live as CSS custom properties in `app/globals.css`. Palette (forest/ocean/slate) is switched via `[data-palette]` on `<html>`; density (comfortable/compact) via `[data-density]`. Tokens are also exposed to Tailwind v4 via `@theme inline` so utilities like `bg-accent-soft` work alongside the named classes.
+- Fonts loaded via `next/font/google` (`Instrument_Serif`, `Inter`, `JetBrains_Mono`) and exposed as CSS variables consumed by globals.css.
+- **Upload →** hero with italic "before" in accent, dashed drop zone with sketchy-icon, 5-column features strip.
+- **Scanning →** `ScanningView` (spinner + progress bar + streaming log). Backend is batch, so `useScanLog` drives a scripted 12-line log at ~900 ms per step and caps at 95% until the job's status flips to `succeeded`. Progress is derived (`done ? 100 : tick`), no setState-in-effect.
+- **Report layout →** `ReportHeader` (eyebrow + title + meta + CSV/new-inspection actions), `ReportTabs` (Overview / Issues / Time-series) using Link-based routing. Old `AnalysisNav`, `JobStatusBanner`, `FindingCard` gone.
+- **Overview →** score-card dial (giant 0–100 in Instrument Serif + italic "Grade X" in accent + threshold footer + colored bar), 3 severity KPIs, points-deducted-by-detector bar list, callout list for criticals, 3-item callout for notable warnings.
+- **Issues →** filter bar (search + severity + detector + count + CSV), sortable headers (severity / detector / sheet / column / row_count), expandable rows showing `IssueDetail` (kv-grid on the left + "why this matters" + per-detector "Detection technique" blurb on the right).
+- **Time-series →** pure inline-SVG `TimeSeriesChart` replaces the 1 MB Plotly bundle. Renders polyline + fill-under-accent, warn rings at `z_flagged`, critical X-markers at `mp_flagged`. Stretches to container via `preserveAspectRatio="none"`.
+- **Tweaks →** bottom-right panel toggled from the TopBar. Palette swatches + density segmented control. Persisted to `localStorage` via `useSyncExternalStore` (no hydration mismatch, no setState-in-effect lint errors).
+- **Dep prune:** dropped `@base-ui/react`, `class-variance-authority`, `clsx`, `lucide-react`, `next-themes`, `plotly.js`, `react-plotly.js`, `shadcn`, `tailwind-merge`, `tw-animate-css`, `@types/plotly.js`, `@types/react-plotly.js`. Removed `lib/utils.ts` (the `cn` helper had no remaining callers). `components/ui/` now contains only a simplified `sonner.tsx`.
+- Backend unchanged. `lib/schemas.ts`, `lib/api.ts`, `lib/env.ts`, `hooks/use-job.ts`, `hooks/use-submit-analysis.ts` all carry over untouched — the redesign is purely presentational.
+- `npm run lint` and `npm run build` both clean; all 4 routes (`/`, `/analysis/[jobId]`, `/analysis/[jobId]/issues`, `/analysis/[jobId]/time-series`) type-check.
+
+**Intentionally not implemented (scoped out until backend supports it):**
+- The design's **Configure** screen (pick worksheets + detectors before submit). The backend currently runs every detector against every sheet — implementing Configure as a client-only filter would be a decorative no-op. When backend gains per-request filtering (probably via query params or a POST body), wire Configure in between upload and scanning.
+- **Sample files** on the upload screen. The mock lists three; without a way to ship a real `.xlsx` payload from the browser, it'd be a dead button.
+- Streaming the real detector log. `useScanLog` is a scripted simulation. An SSE endpoint on the API (open question in §8) would turn the log real.
+
+**Next session — pick whichever:**
+1. **Configure screen** — needs backend: either a `sheets` listing endpoint (`POST /api/v1/analysis/preview` → returns sheet metadata) or accepting a `config` field on the submit form. Then port `sheetlint/project/src/screen_configure.jsx` using the same token-driven CSS.
+2. **Real scan log** — add SSE to the FastAPI worker. Stream `detector_started` / `finding_added` / `detector_finished` events. Replace `useScanLog` with an `EventSource` hook.
+3. **Persistence** — Postgres run history + share links (Tier 3 from §6).
+4. **Redis-backed JobStore** — multi-worker deploy prerequisite.
+5. **Async AI detector** — `asyncio.gather` the per-column Claude calls.
+
+---
+
+### 2026-04-21 — Tier 2 Next.js frontend complete
 
 **Done:**
 - Scaffolded Next.js 16.2 in `frontend/` with App Router, TypeScript strict, Tailwind v4, Turbopack, `@/*` import alias, no src-dir. React 19.2.
