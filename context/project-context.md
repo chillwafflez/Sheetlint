@@ -204,7 +204,131 @@ This is the single number the domain worker reads. The breakdown is what the eng
 
 > **Update this section at the end of every working session.** Keep the prior entry as a short historical note above the latest one.
 
-### 2026-04-22 (latest) — Frontend redesign from Claude Design bundle
+### 2026-04-22 — Configure flow attempted and REVERTED
+
+> **Status:** REVERTED by the user. Git history was rolled back to before
+> this work. The content below is preserved so a future Claude session can
+> pick up the design without re-deriving the plan — but do not assume any
+> of this code currently exists in the repo. Re-check with `git log` and
+> `git status` before referencing files from this section.
+>
+> **Why reverted:** the implemented `/configure/[previewId]` page did not
+> visually match the Claude Design mock at `sheetlint/project/`. The
+> backend and data-flow architecture (see below) was sound and tests
+> passed, but the rendered Configure screen was off enough from the mock
+> that the user opted to revert and start fresh in a new session with
+> more context budget. The likely culprit is the visual layout of
+> `SheetPicker` / `DetectorPicker` / `PreviewStrip` and the CSS classes
+> ported into `globals.css` — verify pixel-by-pixel against
+> `sheetlint/project/src/screen_configure.jsx` before shipping next time.
+
+**Goal of the attempt:** convert the API from "POST file, run everything"
+to a two-step flow honoring the Configure screen from the design mock.
+User wanted:
+- The Cross-reference detector dropped (not in the real backend).
+- Preview row strip included below the sheet picker when a single sheet
+  is selected.
+- Preview TTL = 30 minutes.
+- No "Run with defaults" shortcut.
+- 4 non-AI detectors preselected; AI off by default.
+- All visible sheets preselected.
+- Storage: in-memory for now (same shape as `JobStore` so the Redis swap
+  is mechanical later).
+
+**Architecture used (still the right direction):**
+
+Two-step flow, single file upload:
+
+```
+/  (upload)
+    │ POST /analysis/preview (multipart)
+    │ → AnalysisPreview { preview_id, filename, expires_at, sheets[] }
+    ▼
+/configure/[previewId]
+    │ GET /analysis/preview/{id}   (refresh-safe)
+    │ user picks sheets + detectors
+    │ POST /analysis (JSON AnalysisConfig)
+    │ → 202 { job_id }
+    ▼
+/analysis/[jobId]   (unchanged — polling + report)
+```
+
+Key points:
+- Preview endpoint parses with openpyxl, stashes the temp file in
+  `PreviewStore` keyed by UUID. `/analysis` endpoint resolves the
+  preview → temp path, kicks a background task, discards the preview
+  in the task's `finally` so the temp file is unlinked exactly once.
+- `PreviewStore` mirrors `JobStore`'s async-lock + TTL shape for a clean
+  Redis upgrade path. TTL defaults: `preview_ttl_minutes=30`,
+  `preview_cleanup_interval_seconds=300`.
+- `DetectorId` StrEnum (`structural / statistical / duplicates /
+  timeseries / ai`) + a registry in `detectors/__init__.py` with a
+  `build_detectors(ids, *, api_key)` factory. `analyze()` gained
+  `sheet_filter` and `detector_ids` kwargs; precedence is
+  `detectors` > `detector_ids` > default.
+- Sheet flag derivation (cheap, no detector run): `hidden`,
+  `pre-header rows`, `merged cells` (only if inside the data region),
+  `formula errors`, `empty`, `wide` (>20 cols), else `looks clean`.
+
+Files written / modified (all now reverted):
+
+- Backend: `analysis/schemas.py` (+`DetectorId`, `SheetPreview`,
+  `SheetMetadata`, `AnalysisPreview`, `AnalysisConfig`),
+  `analysis/preview.py` (new `PreviewStore` + `build_sheet_metadata`
+  helpers), `analysis/detectors/__init__.py` (registry),
+  `analysis/service.py` (`sheet_filter` + `detector_ids`),
+  `analysis/router.py` (3 endpoints), `analysis/dependencies.py`
+  (`PreviewStoreDep`), `analysis/exceptions.py` (`PreviewNotFoundError`,
+  `InvalidAnalysisConfigError`), `main.py` (lifespan mounts
+  `PreviewStore` + cleanup loop, plus two new exception handlers),
+  `config.py` (TTL settings), `tests/test_analysis_flow.py` (11 tests
+  rewritten for the two-step flow; all passed in ~0.4 s),
+  `tests/conftest.py` (added `preview_cleanup_interval_seconds=3600`).
+- Frontend: `lib/schemas.ts` (preview + config mirrors),
+  `lib/api.ts` (`createPreview`, `getPreview`, JSON `submitAnalysis`),
+  `hooks/use-create-preview.ts`, `hooks/use-preview.ts`,
+  `hooks/use-submit-analysis.ts` (rewired to take `AnalysisConfig`),
+  `app/configure/[previewId]/page.tsx`, `components/sheet-picker.tsx`,
+  `components/detector-picker.tsx`, `components/preview-strip.tsx`,
+  `components/configure-footer.tsx`, `components/icons.tsx`
+  (+`CheckIcon`, `EyeOffIcon`), `components/top-bar.tsx`
+  (Configure breadcrumb), `app/globals.css` (Configure classes —
+  `.sheet-card`, `.detector`, `.toggle`, `.ai-callout`,
+  `.preview-strip`, `.config-head`, `.config-footer`,
+  `.sheet-controls`), `components/upload-zone.tsx` (rewired to
+  `useCreatePreview`).
+
+**Detector-card copy decision worth preserving:** the mock's copy was
+generic and partially wrong (it said Claude Haiku; reality is
+`claude-opus-4-7`). The attempt rewrote each detector card to match the
+actual implementation (type purity / regex coverage / null density on
+Statistical; STUMPY + rolling z-score ensemble on Time-series;
+`claude-opus-4-7` on Claude semantic). Keep that correction when
+rebuilding.
+
+**Known trade-off that was accepted:** the file is parsed once at the
+preview endpoint and re-parsed inside the /analysis background task.
+2× parse cost; acceptable for MVP, worth optimizing only if parse time
+shows up in traces. Alternatives (stashing the parsed `ExcelDocument`
+in memory, or serializing it) were rejected as premature.
+
+**For the next attempt at this feature:**
+
+1. **Pixel-test the Configure screen against the mock**
+   (`sheetlint/project/src/screen_configure.jsx` +
+   `sheetlint/project/styles.css`) before declaring done. The previous
+   attempt didn't run the dev server + visually diff; that's where the
+   mismatch slipped through.
+2. The architecture above is right; port it back as-is.
+3. The 11-test coverage (`tests/test_analysis_flow.py`) was solid —
+   preview round-trip, refetch, unknown preview 404, detector filter
+   honored, preview cannot be reused, unknown sheet 400, invalid
+   extension 400, unparseable xlsx 400, plus health and unknown-job
+   cases. Mirror that test set.
+
+---
+
+### 2026-04-22 — Frontend redesign from Claude Design bundle
 
 **Done:**
 - Replaced the shadcn/ui-based frontend with the Claude Design handoff from `sheetlint/project/` (Instrument Serif + Inter + JetBrains Mono, OKLCH "forest" palette, named component classes — `.btn`, `.score-card`, `.callout`, `.issues-table`, `.ts-card`, etc.).
