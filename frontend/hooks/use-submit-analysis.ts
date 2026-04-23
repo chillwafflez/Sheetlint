@@ -5,16 +5,16 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { ApiError, submitAnalysis } from "@/lib/api";
-import type { JobCreated } from "@/lib/schemas";
+import type { AnalysisConfig, JobCreated } from "@/lib/schemas";
 
 /**
- * Upload a workbook and navigate to its polling page on success.
- * Consumers call `mutate(file)` and observe `isPending` for button state.
+ * Submit an AnalysisConfig (preview_id + selected sheets + detectors) and
+ * navigate to the job polling page on 202.
  */
 export function useSubmitAnalysis() {
   const router = useRouter();
 
-  return useMutation<JobCreated, Error, File>({
+  return useMutation<JobCreated, Error, AnalysisConfig>({
     mutationFn: submitAnalysis,
     onSuccess: (job) => {
       router.push(`/analysis/${job.id}`);
@@ -22,8 +22,8 @@ export function useSubmitAnalysis() {
     onError: (error) => {
       const message =
         error instanceof ApiError
-          ? `Upload failed (${error.status}): ${error.message}`
-          : error.message || "Upload failed";
+          ? `Submission failed (${error.status}): ${error.message}`
+          : error.message || "Submission failed";
       toast.error(message);
     },
   });

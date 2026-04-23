@@ -8,6 +8,7 @@ import { Crumbs } from "@/components/crumbs";
 
 function crumbsForPath(pathname: string): string[] {
   if (pathname === "/") return ["Sheetlint", "Upload"];
+  if (pathname.startsWith("/configure/")) return ["Sheetlint", "Configure"];
   if (pathname.startsWith("/analysis/")) return ["Sheetlint", "Report"];
   return ["Sheetlint"];
 }

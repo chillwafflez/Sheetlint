@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     job_result_ttl_hours: int = 24
     job_cleanup_interval_seconds: int = 600
 
+    preview_ttl_minutes: int = 30
+    preview_cleanup_interval_seconds: int = 300
+
     # AI layer — if key is None, the AI detector silently no-ops.
     anthropic_api_key: str | None = None
     enable_ai: bool = True

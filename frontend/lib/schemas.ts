@@ -11,6 +11,15 @@ import { z } from "zod";
 export const severitySchema = z.enum(["critical", "warning", "info"]);
 export type Severity = z.infer<typeof severitySchema>;
 
+export const detectorIdSchema = z.enum([
+  "structural",
+  "statistical",
+  "duplicates",
+  "timeseries",
+  "ai",
+]);
+export type DetectorId = z.infer<typeof detectorIdSchema>;
+
 export const findingSchema = z.object({
   detector: z.string(),
   severity: severitySchema,
@@ -76,6 +85,42 @@ export const jobCreatedSchema = z.object({
   status_url: z.string(),
 });
 export type JobCreated = z.infer<typeof jobCreatedSchema>;
+
+/**
+ * Preview flow (POST /analysis/preview + GET /analysis/preview/{id}).
+ */
+export const sheetPreviewSchema = z.object({
+  headers: z.array(z.string()),
+  rows: z.array(z.array(z.string())),
+});
+export type SheetPreview = z.infer<typeof sheetPreviewSchema>;
+
+export const sheetMetadataSchema = z.object({
+  name: z.string(),
+  row_count: z.number(),
+  col_count: z.number(),
+  hidden: z.boolean(),
+  header_row: z.number(),
+  flags: z.array(z.string()),
+  preview: sheetPreviewSchema,
+});
+export type SheetMetadata = z.infer<typeof sheetMetadataSchema>;
+
+export const analysisPreviewSchema = z.object({
+  preview_id: z.uuid(),
+  filename: z.string(),
+  created_at: z.iso.datetime({ offset: true }),
+  expires_at: z.iso.datetime({ offset: true }),
+  sheets: z.array(sheetMetadataSchema),
+});
+export type AnalysisPreview = z.infer<typeof analysisPreviewSchema>;
+
+export const analysisConfigSchema = z.object({
+  preview_id: z.uuid(),
+  sheets: z.array(z.string()).min(1),
+  detectors: z.array(detectorIdSchema).min(1),
+});
+export type AnalysisConfig = z.infer<typeof analysisConfigSchema>;
 
 /**
  * Narrowed shape of the metadata the TimeSeriesDetector ships through

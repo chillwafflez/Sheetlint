@@ -7,6 +7,9 @@
 
 import { env } from "@/lib/env";
 import {
+  type AnalysisConfig,
+  type AnalysisPreview,
+  analysisPreviewSchema,
   type Job,
   type JobCreated,
   jobCreatedSchema,
@@ -35,13 +38,42 @@ async function readErrorDetail(response: Response): Promise<string> {
   return response.statusText || `HTTP ${response.status}`;
 }
 
-export async function submitAnalysis(file: File): Promise<JobCreated> {
+export async function createPreview(file: File): Promise<AnalysisPreview> {
   const form = new FormData();
   form.append("file", file);
 
-  const response = await fetch(`${API_BASE}/api/v1/analysis`, {
+  const response = await fetch(`${API_BASE}/api/v1/analysis/preview`, {
     method: "POST",
     body: form,
+  });
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorDetail(response));
+  }
+
+  return analysisPreviewSchema.parse(await response.json());
+}
+
+export async function getPreview(previewId: string): Promise<AnalysisPreview> {
+  const response = await fetch(
+    `${API_BASE}/api/v1/analysis/preview/${previewId}`,
+    { cache: "no-store" },
+  );
+
+  if (!response.ok) {
+    throw new ApiError(response.status, await readErrorDetail(response));
+  }
+
+  return analysisPreviewSchema.parse(await response.json());
+}
+
+export async function submitAnalysis(
+  config: AnalysisConfig,
+): Promise<JobCreated> {
+  const response = await fetch(`${API_BASE}/api/v1/analysis`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(config),
   });
 
   if (!response.ok) {

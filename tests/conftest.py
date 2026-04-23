@@ -27,6 +27,7 @@ def test_settings() -> Settings:
         anthropic_api_key=None,
         enable_ai=False,
         job_cleanup_interval_seconds=3600,
+        preview_cleanup_interval_seconds=3600,
     )
 
 

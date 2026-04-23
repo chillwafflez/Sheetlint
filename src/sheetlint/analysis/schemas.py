@@ -8,8 +8,10 @@ fields — orchestration and scoring live in service.py and scoring.py.
 
 from __future__ import annotations
 
+from datetime import datetime
 from enum import StrEnum
 from typing import Any
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field
 
@@ -30,6 +32,21 @@ class Severity(StrEnum):
     @property
     def label(self) -> str:
         return self.value.capitalize()
+
+
+class DetectorId(StrEnum):
+    """Stable identifiers used by clients to select a subset of detectors.
+
+    The display string on each `Finding.detector` stays PascalCase (e.g.
+    "Structural") because it's what the report UI renders — these lowercase
+    ids are the machine-readable handles used in `AnalysisConfig`.
+    """
+
+    STRUCTURAL = "structural"
+    STATISTICAL = "statistical"
+    DUPLICATES = "duplicates"
+    TIMESERIES = "timeseries"
+    AI = "ai"
 
 
 class Finding(BaseModel):
@@ -102,3 +119,55 @@ class AnalysisResult(BaseModel):
         for f in self.findings:
             grouped.setdefault(f.detector, []).append(f)
         return grouped
+
+
+class SheetPreview(BaseModel):
+    """First N data rows of a sheet, rendered as plain strings for UI display."""
+
+    headers: list[str]
+    rows: list[list[str]]
+
+
+class SheetMetadata(BaseModel):
+    """Lightweight summary of one worksheet — populated during preview parsing.
+
+    `flags` are display-ready hint labels ("merged cells", "formula errors",
+    "hidden", "pre-header rows", "empty", "wide", "looks clean") derived
+    cheaply from the parsed sheet without running any detectors.
+    """
+
+    name: str
+    row_count: int
+    col_count: int
+    hidden: bool
+    header_row: int = Field(
+        description="1-indexed row number where the detected header lives."
+    )
+    flags: list[str]
+    preview: SheetPreview
+
+
+class AnalysisPreview(BaseModel):
+    """Response from POST /analysis/preview — what the Configure screen reads."""
+
+    preview_id: UUID
+    filename: str
+    created_at: datetime
+    expires_at: datetime
+    sheets: list[SheetMetadata]
+
+
+class AnalysisConfig(BaseModel):
+    """Payload for POST /analysis — references a prior preview and picks
+    which worksheets and detectors to run.
+    """
+
+    preview_id: UUID
+    sheets: list[str] = Field(
+        min_length=1,
+        description="Names of worksheets to inspect (subset of preview.sheets).",
+    )
+    detectors: list[DetectorId] = Field(
+        min_length=1,
+        description="Detector ids to run. Order in this list determines display order in the report.",
+    )

@@ -27,6 +27,36 @@ function Svg({ size = 14, children, ...props }: IconProps & { size?: number }) {
   );
 }
 
+export function CheckIcon(props: IconProps) {
+  return (
+    <svg
+      width={12}
+      height={12}
+      viewBox="0 0 12 12"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      aria-hidden
+      {...props}
+    >
+      <path
+        d="M2.5 6.5l2.5 2.5 4.5-5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M2 2l12 12" strokeLinecap="round" />
+      <path d="M6.5 6.5a2 2 0 002.83 2.83M3.5 4.5C2 5.8 1 8 1 8s2.5 5 7 5c1.1 0 2.1-.3 3-.7M13 12.2c1.2-1 2-2.2 2-2.2s-2.5-5-7-5c-.6 0-1.2.1-1.7.2" />
+    </Svg>
+  );
+}
+
 export function ArrowIcon(props: IconProps) {
   return (
     <svg

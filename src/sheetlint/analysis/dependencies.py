@@ -1,13 +1,14 @@
-"""Analysis-domain dependencies — upload validation."""
+"""Analysis-domain dependencies — upload validation and store accessors."""
 
 from __future__ import annotations
 
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, UploadFile
+from fastapi import Depends, Request, UploadFile
 
 from sheetlint.analysis.exceptions import FileTooLargeError, InvalidExcelFileError
+from sheetlint.analysis.preview import PreviewStore
 from sheetlint.config import SettingsDep
 
 
@@ -29,3 +30,11 @@ async def validate_upload(file: UploadFile, settings: SettingsDep) -> UploadFile
 
 
 ValidatedUpload = Annotated[UploadFile, Depends(validate_upload)]
+
+
+def get_preview_store(request: Request) -> PreviewStore:
+    """Pull the PreviewStore singleton off app.state (initialized in lifespan)."""
+    return request.app.state.preview_store
+
+
+PreviewStoreDep = Annotated[PreviewStore, Depends(get_preview_store)]
