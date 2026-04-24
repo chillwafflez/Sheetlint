@@ -204,7 +204,46 @@ This is the single number the domain worker reads. The breakdown is what the eng
 
 > **Update this section at the end of every working session.** Keep the prior entry as a short historical note above the latest one.
 
-### 2026-04-22 (latest) — Configure flow: preview → config → run
+### 2026-04-23 (latest) — First production deployment: Render (backend) + Vercel (frontend)
+
+**Done:**
+- **Backend live on Render free tier.** Service `sheetlint-api` at `https://sheetlint-api.onrender.com`. Configured via the Render dashboard (not Blueprint). `/health` returns 200 with `environment=production`.
+  - **Build command:** `pip install uv && uv sync --no-dev`
+  - **Start command:** `uv run uvicorn sheetlint.main:app --host 0.0.0.0 --port $PORT --workers 1`
+  - **Env vars set:** `ENVIRONMENT=production`, `LOG_LEVEL=INFO`, `CORS_ORIGINS=["https://sheetlint.vercel.app"]`, `ANTHROPIC_API_KEY=<set>`, `ENABLE_AI=true`, plus the TTL/cleanup knobs at defaults.
+  - Auto-deploy on push to `main` is on.
+- **Frontend live on Vercel.** Project `sheetlint` at `https://sheetlint.vercel.app`. Imported from GitHub with **Root Directory = `frontend`**. Framework preset auto-detected Next.js 16; build command, output dir, install command all defaults.
+  - **One env var** `NEXT_PUBLIC_API_URL=https://sheetlint-api.onrender.com` (no trailing slash, no `/api/v1` — `lib/api.ts` appends that itself). Set before first build so it gets inlined into the bundle.
+- **End-to-end smoke test passed** on the deployed pair: upload → preview → configure → analyze → poll → report, all working against the real Render backend from the real Vercel frontend.
+- **Files added to repo:**
+  - `.python-version` → pins `3.11.9` for local `uv` / pyenv consistency. Ignored by the dashboard-configured Render service but harmless and useful if we ever switch to Blueprint.
+  - `frontend/.env.local.example` → documents `NEXT_PUBLIC_API_URL` for future local devs.
+- **`render.yaml` created but NOT committed.** Documented as a Blueprint file for the record, but the live Render service was configured through the dashboard, so the YAML is a mismatched source of truth. Decision: keep it around locally as reference; commit only if we ever recreate the service via `New → Blueprint` (which would give a new URL and force a Vercel CORS re-config).
+- **Deployment workflow established:** every push to `main` triggers independent rebuilds on both platforms. Vercel rebuilds only on `frontend/**` changes, Render only on backend changes. Rollbacks available on both dashboards (Vercel: Promote to Production on an old deployment; Render: Rollback on Deploys tab).
+
+**Key config decisions and gotchas captured:**
+- **`--workers 1` is load-bearing.** Both `JobStore` and `PreviewStore` are in-memory on `app.state`. Multi-worker = state splits across processes = preview POST lands on worker A, analyze POST hits worker B, preview not found. Single worker is a scalability ceiling, not a functionality ceiling — every detector runs correctly under one worker.
+- **`CORS_ORIGINS` is an exact-string match with no trailing slash.** Browser sends `Origin: https://sheetlint.vercel.app`; the allowlist must match byte-for-byte. Got this right on the first try.
+- **`NEXT_PUBLIC_*` env vars are baked at build time, not read at runtime.** Changing `NEXT_PUBLIC_API_URL` requires a Vercel redeploy, not just a restart. Set it before the first build to avoid a wasted deploy.
+- **Render free-tier cold start** ≈ 30s after 15 min idle, because of spin-up + STUMPY's first-call JIT. Demo mitigation: hit `/health` once before opening slides.
+- **Production URL is `sheetlint.vercel.app`**, not the long hashed deployment URL. The long URL is an immutable per-build snapshot kept around for rollback/QA; never put it in CORS or share it as "the site."
+
+**Known deployment limitations (carried over, unchanged):**
+- Single worker → no horizontal scale. Swap both stores to Redis to unlock multi-worker (Tier 1.5).
+- Render free tier sleeps after 15 min idle. Paid tier or cron keepalive fixes this.
+- No PR preview backends — Vercel previews all hit the production Render backend. Fine for a demo; not for team workflows.
+- No custom domain yet. `.vercel.app` is good enough for the lead demo.
+
+**Next session — pick whichever:**
+1. **Warm-keepalive** — tiny cron (GitHub Actions or UptimeRobot) hitting `/health` every 10 min during business hours so the demo never hits a cold start.
+2. **Redis-backed stores** — swap `JobStore` + `PreviewStore` together; unlocks multi-worker, PR preview backends, and persistence of in-flight previews across restarts.
+3. **Custom domain** — point a real domain at Vercel + update `CORS_ORIGINS` on Render.
+4. **Sentry on both sides** — 5-min integration; catches the cold-start timeout / 502 cases during the demo.
+5. **CI** — GitHub Actions running `uv run pytest` + `npm run build` on PRs so a broken main never auto-deploys.
+
+---
+
+### 2026-04-22 — Configure flow: preview → config → run
 
 **Done:**
 - Converted the API from "POST file, run everything" to a two-step flow that honors the Configure screen from the design mock.
