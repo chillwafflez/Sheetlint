@@ -7,9 +7,9 @@ import { Brand } from "@/components/brand";
 import { Crumbs } from "@/components/crumbs";
 
 function crumbsForPath(pathname: string): string[] {
-  if (pathname === "/") return ["Sheetlint", "Upload"];
-  if (pathname.startsWith("/configure/")) return ["Sheetlint", "Configure"];
-  if (pathname.startsWith("/analysis/")) return ["Sheetlint", "Report"];
+  if (pathname === "/") return ["Upload"];
+  if (pathname.startsWith("/configure/")) return ["Configure"];
+  if (pathname.startsWith("/analysis/")) return ["Report"];
   return ["Sheetlint"];
 }
 
@@ -22,7 +22,7 @@ export function TopBar() {
       <Brand />
       <Crumbs items={crumbs} />
       <div className="topbar__right">
-        <span className="mono" style={{ fontSize: 11 }}>
+        <span className="mono invisible" style={{ fontSize: 11 }}>
           LOCAL · NO UPLOAD
         </span>
       </div>

@@ -21,7 +21,7 @@ const FEATURES = [
   },
   {
     num: "05 / SEMANTIC",
-    title: "Claude review",
+    title: "AI review",
     body: "Prompt-cached per-column review: does the header match the content? Flags issues regex can't see.",
   },
 ] as const;

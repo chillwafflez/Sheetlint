@@ -54,7 +54,7 @@ export const DETECTOR_DEFS: readonly DetectorDef[] = [
   },
   {
     id: "ai",
-    title: "Claude semantic",
+    title: "AI semantic",
     body: "Per-column prompt-cached review with claude-opus-4-7: does the header match the content? Flags values that don't fit the implied domain.",
     checks: ["header_content_match", "domain_fit"],
     Icon: SparkleIcon,

@@ -6,7 +6,7 @@ export function Brand() {
       <span className="brand__mark">
         Sheet<span className="brand__dot" />lint
       </span>
-      <span className="brand__tag">DATA QUALITY · v0.4</span>
+      <span className="brand__tag">DATA QUALITY</span>
     </Link>
   );
 }
